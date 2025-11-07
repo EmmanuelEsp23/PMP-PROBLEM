@@ -2,11 +2,10 @@ import math
 import random
 import numpy as np
 import sys
-
-# --- FUNCIONES AUXILIARES (Lectura y Cálculo Básico) ---
+import time 
 
 def read_instance_from_file(filename):
-    print(f"--- Reading instance file: {filename} ---")
+    print(f"Reading instance {filename}")
     try:
         with open(filename, 'r') as f:
             n = int(f.readline().strip())
@@ -22,11 +21,11 @@ def read_instance_from_file(filename):
                 sys.exit()
             return n, p, dist_matrix_np
     except Exception as e:
-        print(f"Error reading file: {e}")
+        print(f"Error reading file {e}")
         sys.exit()
 
 def calculate_total_cost(current_solution, n, dist_matrix):
-    # Función clásica para validación y conteo inicial
+    # Función clásica. Ahora solo se usa para validar si es necesario.
     total_cost = 0
     if not current_solution: return float('inf')
     for i in range(n):
@@ -34,42 +33,73 @@ def calculate_total_cost(current_solution, n, dist_matrix):
         total_cost += min_dist
     return total_cost
 
-# --- HEURÍSTICA CONSTRUCTIVA (rgreedy) ---
+# --- HEURÍSTICA CONSTRUCTIVA - RGREEDY (VERSIÓN OPTIMIZADA) ---
 
 def rgreedy_constructor(n, p, dist_matrix, k_rcl):
-    print(f"\n--- Running rgreedy (k_rcl = {k_rcl}) ---")
+    """
+    Implementa rgreedy usando un cálculo de costo INCREMENTAL (delta)
+    para ser mucho más rápido.
+    """
+    print(f"\n--- Running rgreedy (FAST implementation, k_rcl = {k_rcl}) ---")
     solution = []
     candidates = list(range(n))
+    
+    # Este array guardará la distancia más corta actual para CADA cliente
+    # Inicia en infinito.
+    min_dists = np.full(n, float('inf'))
+    final_cost = float('inf')
+
     for i in range(p):
+        print(f"Iteration {i+1}/{p} (selecting median)...")
         candidate_costs = []
+
+        # --- 1. PASO DE EVALUACIÓN (OPTIMIZADO) ---
         for c in candidates:
-            temp_sol = solution + [c]
-            cost = calculate_total_cost(temp_sol, n, dist_matrix)
-            candidate_costs.append((cost, c))
+            new_total_cost = 0.0
+            
+            # No llamamos a calculate_total_cost.
+            # Calculamos el costo incrementalmente.
+            for j in range(n):
+                # ¿Está el candidato 'c' más cerca que la mejor mediana actual?
+                dist_to_c = dist_matrix[j][c]
+                new_total_cost += min(min_dists[j], dist_to_c)
+            
+            candidate_costs.append((new_total_cost, c))
+
+        # --- 2. PASO DE RESTRICCIÓN (RCL) ---
         candidate_costs.sort(key=lambda x: x[0])
-        rcl = candidate_costs[:min(k_rcl, len(candidate_costs))]
+        rcl_size = min(k_rcl, len(candidate_costs))
+        rcl = candidate_costs[:rcl_size]
+        
+        # --- 3. PASO DE ALEATORIZACIÓN ---
+        # 'chosen_cost' es el costo total del sistema con este nodo añadido
         chosen_cost, chosen_node = random.choice(rcl)
+        final_cost = chosen_cost # Guardamos el costo de la última iteración
+
+        # --- 4. PASO DE SELECCIÓN ---
         solution.append(chosen_node)
         candidates.remove(chosen_node)
-    return solution, chosen_cost
+        
+        # --- 5. ACTUALIZACIÓN CRUCIAL ---
+        # Actualizamos permanentemente las distancias mínimas con el nodo elegido
+        for j in range(n):
+            dist_to_chosen = dist_matrix[j][chosen_node]
+            min_dists[j] = min(min_dists[j], dist_to_chosen)
+            
+        print(f"    -> Node chosen: {chosen_node} (New Total Cost: {chosen_cost:.2f})")
+        
+    # El costo final es el último costo total calculado
+    return solution, final_cost
 
-# --- BÚSQUEDA LOCAL OPTIMIZADA (Fast Interchange + First Improvement) ---
+# --- BÚSQUEDA LOCAL - (Sin cambios) ---
 
 def update_structures(solution, n, dist_matrix):
-    """
-    Precalcula para cada nodo cuál es su mediana más cercana
-    y cuál es la SEGUNDA más cercana.
-    Retorna:
-    - closest: lista donde closest[i] es la mediana más cercana al nodo i
-    - sec_closest: lista donde sec_closest[i] es la 2da más cercana
-    - current_cost: el costo total actual
-    """
+    # Update closest and second closest medians for each node
     closest = [-1] * n
     sec_closest = [-1] * n
     current_cost = 0.0
 
     for i in range(n):
-        # Encontrar la 1ra y 2da mejor distancia para el nodo i
         d1, d2 = float('inf'), float('inf')
         m1, m2 = -1, -1
         
@@ -90,60 +120,49 @@ def update_structures(solution, n, dist_matrix):
 def local_search_fast(initial_solution, n, dist_matrix):
     current_solution = list(initial_solution)
     
-    # Inicializar estructuras
+    #Initialize structures
     closest, sec_closest, current_cost = update_structures(current_solution, n, dist_matrix)
     
     while True:
         improvement_found = False
         nodes_out = [x for x in range(n) if x not in current_solution]
         
-        # Probar todos los posibles intercambios
         for m_out in current_solution:
             for m_in in nodes_out:
                 
-                # --- CÁLCULO RÁPIDO DEL DELTA ---
+                # Delta calculation
                 delta = 0.0
                 for i in range(n):
                     dist_current = dist_matrix[i][closest[i]]
                     dist_in = dist_matrix[i][m_in]
                     
                     if closest[i] == m_out:
-                        # CASO CRÍTICO: El nodo i pierde su mediana actual.
-                        # Debe elegir entre su segunda opción o la nueva mediana entrante.
                         dist_sec = dist_matrix[i][sec_closest[i]]
                         new_dist = min(dist_sec, dist_in)
                     else:
-                        # CASO NORMAL: El nodo i conserva su mediana actual.
-                        # Solo cambia si la nueva mediana entrante es AÚN mejor.
                         new_dist = min(dist_current, dist_in)
                         
                     delta += (new_dist - dist_current)
 
-                # --- ESTRATEGIA FIRST IMPROVEMENT ---
+                # First found routine
                 if delta < -1e-9:
-                    # Aplicar intercambio
                     current_solution.remove(m_out)
                     current_solution.append(m_in)
-                    
-                    # Actualizar costo rápidamente
                     current_cost += delta
                     improvement_found = True
                     
                     print(f"    -> Quick swap: {m_out} (out) <-> {m_in} (in) | New cost: {current_cost:.4f}")
                     
-                    # Reconstruir estructuras para la siguiente iteración
-                    # (Es necesario porque muchas 1ras y 2das opciones pueden haber cambiado)
                     closest, sec_closest, current_cost_check = update_structures(current_solution, n, dist_matrix)
                     
-                    # Pequeña validación para asegurar que el delta funciona bien
                     if abs(current_cost - current_cost_check) > 1e-5:
                          print(f"Warning: Delta drift detected. Resetting cost to {current_cost_check:.4f}")
                          current_cost = current_cost_check
                          
-                    break # Salir del bucle interno (m_in)
+                    break 
             
             if improvement_found:
-                break # Salir del bucle externo (m_out) y reiniciar while
+                break 
 
         if not improvement_found:
             print("  > Local optimum reached.")
@@ -151,22 +170,42 @@ def local_search_fast(initial_solution, n, dist_matrix):
 
     return current_solution, current_cost
 
-# --- MAIN ---
+# --- Bloque Principal de Ejecución (AJUSTADO) ---
 if __name__ == "__main__":
     filename = input("Enter instance file path: ")
     n, p, dist_matrix = read_instance_from_file(filename)
     
     print(f"\n--- Data: n={n}, p={p} ---")
+    
+    # Total Timer Start
+    total_start_time = time.perf_counter()
 
-    # 1. RGREEDY
+    # 1. RGREEDY (Ahora usa la versión rápida)
+    constructive_start_time = time.perf_counter()
+    # AHORA CAPTURAMOS EL COSTO DEVUELTO, AHORRANDO UN CÁLCULO
     sol_constructive, cost_constructive = rgreedy_constructor(n, p, dist_matrix, k_rcl=3)
+    constructive_end_time = time.perf_counter()
+    
+    # Ya no necesitamos recalcular el costo constructivo
     print(f"Constructive Cost: {cost_constructive:.4f}")
 
     # 2. FAST LOCAL SEARCH
+    ls_start_time = time.perf_counter()
     print("\n--- Starting Fast Local Search ---")
     sol_final, cost_final = local_search_fast(sol_constructive, n, dist_matrix)
+    ls_end_time = time.perf_counter()
+    
+    total_end_time = time.perf_counter()
+    # --- FIN CRONÓMETRO TOTAL ---
+
     
     print(f"\n=== FINAL RESULT ===")
     print(f"Initial Cost: {cost_constructive:.4f} -> Final Cost: {cost_final:.4f}")
     print(f"Improvement: {cost_constructive - cost_final:.4f}")
     print(f"Final Medians: {sorted(sol_final)}")
+    
+    # --- IMPRESIÓN DE TIEMPOS ---
+    print("\n--- EXECUTION TIME ---")
+    print(f"Constructive (rgreedy): {constructive_end_time - constructive_start_time:.6f} seconds")
+    print(f"Local Search (Fast):    {ls_end_time - ls_start_time:.6f} seconds")
+    print(f"Total Time:             {total_end_time - total_start_time:.6f} seconds")
