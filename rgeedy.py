@@ -25,7 +25,6 @@ def read_instance_from_file(filename):
         sys.exit()
 
 def calculate_total_cost(current_solution, n, dist_matrix):
-    # Función clásica. Ahora solo se usa para validar si es necesario.
     total_cost = 0
     if not current_solution: return float('inf')
     for i in range(n):
@@ -33,7 +32,6 @@ def calculate_total_cost(current_solution, n, dist_matrix):
         total_cost += min_dist
     return total_cost
 
-# --- HEURÍSTICA CONSTRUCTIVA - RGREEDY (VERSIÓN OPTIMIZADA) ---
 
 def rgreedy_constructor(n, p, dist_matrix, k_rcl):
     """
