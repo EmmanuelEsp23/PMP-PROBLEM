@@ -11,7 +11,8 @@
 #include <limits>
 #include <iomanip>
 
-// Alias de tipo para legibilidad
+// Este código lo realicé utilizando Gemini con C++14, adaptado de Python para mayor eficiencia, pero codifiqué 
+// en Python porque es un lenguaje que manejo mejor. Espero que esté bien así, cualquier duda estoy a sus órdenes.
 using DistanceMatrix = std::vector<std::vector<double>>;
 
 // --- INICIO DE LA CORRECCIÓN DE ALEATORIEDAD ---
