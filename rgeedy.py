@@ -101,6 +101,7 @@ def update_structures(solution, n, dist_matrix):
         
     return closest, sec_closest, current_cost
 
+#Local search function that implements the swapping strategy with efficient cost updates
 def local_search_fast(initial_solution, n, dist_matrix):
     current_solution = list(initial_solution)
     
